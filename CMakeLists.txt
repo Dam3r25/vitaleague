@@ -29,6 +29,8 @@ target_link_libraries(${PROJECT_NAME}
   ScePgf_stub
   ScePvf_stub
   SceCommonDialog_stub
+  SceSharedFb_stub
+  SceAppMgr_stub
   freetype
   png
   jpeg
