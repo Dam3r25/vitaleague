@@ -79,38 +79,120 @@ static void shadow(float x,float z,float rad) {
     glBegin(GL_TRIANGLE_FAN);glColor3f(.06f,.12f,.07f);glVertex3f(x,.035f,z);
     for(int i=0;i<=16;i++){float a=i*2*PI/16;glVertex3f(x+cosf(a)*rad,.035f,z+sinf(a)*rad);}glEnd();
 }
-static void draw_arena(void) {
-    flat(-200,-200,200,200,-.25f,.12f,.15f,.19f);
-    for(int i=0;i<16;i++){float x0=-HX+i*(2*HX/16),x1=-HX+(i+1)*(2*HX/16);float c=(i&1)?.19f:.22f;flat(x0,-HY,x1,HY,0,c,.48f,c+.04f);}
-    flat(-.12f,-HY,.12f,HY,.025f,.9f,.9f,.9f);
-    flat(-HX-GD,-GZ,-HX,GZ,.03f,.12f,.28f,.8f);flat(HX,-GZ,HX+GD,GZ,.03f,.85f,.4f,.08f);
-    /* Bordes y techo: la colision real ya la resuelve arena() en rlphys.h. */
-    box(0,1.7f,-HY-.35f,HX,.35f,.35f,.35f,.42f,.52f);
-    box(0,1.7f, HY+.35f,HX,.35f,.35f,.35f,.42f,.52f);
-    float side=(HY-GZ)*.5f;
-    box(-HX-.35f,1.7f,-(HY+GZ)*.5f,.35f,.35f,side,.35f,.42f,.52f);
-    box(-HX-.35f,1.7f, (HY+GZ)*.5f,.35f,.35f,side,.35f,.42f,.52f);
-    box(HX+.35f,1.7f,-(HY+GZ)*.5f,.35f,.35f,side,.35f,.42f,.52f);
-    box(HX+.35f,1.7f, (HY+GZ)*.5f,.35f,.35f,side,.35f,.42f,.52f);
-    box(-HX-GD-.35f,1.7f,0,.35f,.35f,GZ,.12f,.28f,.8f);
-    box( HX+GD+.35f,1.7f,0,.35f,.35f,GZ,.85f,.4f,.08f);
-    box(-HX-GD*.5f,1.7f,-GZ-.25f,GD*.5f,.35f,.25f,.12f,.28f,.8f);
-    box(-HX-GD*.5f,1.7f, GZ+.25f,GD*.5f,.35f,.25f,.12f,.28f,.8f);
-    box( HX+GD*.5f,1.7f,-GZ-.25f,GD*.5f,.35f,.25f,.85f,.4f,.08f);
-    box( HX+GD*.5f,1.7f, GZ+.25f,GD*.5f,.35f,.25f,.85f,.4f,.08f);
-    box(-HX,3.25f,0,.22f,1.55f,.22f,.25f,.48f,1);box(-HX,6.4f,0,.22f,.18f,GZ,.25f,.48f,1);
-    box(HX,3.25f,0,.22f,1.55f,.22f,1,.55f,.12f);box(HX,6.4f,0,.22f,.18f,GZ,1,.55f,.12f);
+static void pad_disc(float x, float z, float radius, float y, float r, float g, float b) {
+    const int N = 20;
+    glBegin(GL_TRIANGLE_FAN);
+    glColor3f(r * .45f, g * .45f, b * .45f);
+    glVertex3f(x, y, z);
+    for (int i = 0; i <= N; ++i) {
+        float a = 2.0f * PI * (float)i / (float)N;
+        glColor3f(r, g, b);
+        glVertex3f(x + cosf(a) * radius, y, z + sinf(a) * radius);
+    }
+    glEnd();
+    glBegin(GL_QUADS);
+    glColor3f(1.0f, .92f, .55f);
+    for (int i = 0; i < N; ++i) {
+        float a0 = 2.0f * PI * (float)i / (float)N;
+        float a1 = 2.0f * PI * (float)(i + 1) / (float)N;
+        glVertex3f(x + cosf(a0) * radius * .88f, y + .025f, z + sinf(a0) * radius * .88f);
+        glVertex3f(x + cosf(a0) * radius, y + .025f, z + sinf(a0) * radius);
+        glVertex3f(x + cosf(a1) * radius, y + .025f, z + sinf(a1) * radius);
+        glVertex3f(x + cosf(a1) * radius * .88f, y + .025f, z + sinf(a1) * radius * .88f);
+    }
+    glEnd();
 }
+
+static void draw_pads(const World *w, float now) {
+    for (int i = 0; i < NPADS; ++i) {
+        if (w->pad_t[i] > 0.0f) continue;
+        float x = PAD_XY[i][0] * SCALE;
+        float z = PAD_XY[i][1] * SCALE;
+        if (PAD_IS_BIG(i)) {
+            float pulse = .92f + .08f * sinf(now * 4.0f);
+            pad_disc(x, z, 1.12f * pulse, .075f, 1.0f, .62f, .08f);
+            pad_disc(x, z, .43f * pulse, .09f, 1.0f, .9f, .35f);
+        } else {
+            pad_disc(x, z, .58f, .055f, .12f, .72f, 1.0f);
+            pad_disc(x, z, .20f, .07f, .65f, .95f, 1.0f);
+        }
+    }
+}
+
+static void draw_arena(void) {
+    /* Mismas medidas que rlphys.h: X=81.92 m, Z=102.40 m, altura=20.44 m. */
+    flat(-HX, -HY, HX, HY, -.08f, .12f, .18f, .16f);
+    for (int i = 0; i < 20; ++i) {
+        float x0 = -HX + (2.0f * HX * i / 20.0f);
+        float x1 = -HX + (2.0f * HX * (i + 1) / 20.0f);
+        float c = (i & 1) ? .18f : .22f;
+        flat(x0, -HY, x1, HY, .005f, c, .43f, c + .035f);
+    }
+    /* Lineas centrales */
+    flat(-.055f, -HY, .055f, HY, .018f, .9f, .92f, .88f);
+    flat(-HX, -.055f, HX, .055f, .019f, .9f, .92f, .88f);
+
+    /* Paredes laterales completas: no son simples bordillos de 3 metros. */
+    box(-HX, ARENA_H * SCALE * .5f, 0, .28f, ARENA_H * SCALE * .5f, HY, .28f, .34f, .43f);
+    box( HX, ARENA_H * SCALE * .5f, 0, .28f, ARENA_H * SCALE * .5f, HY, .28f, .34f, .43f);
+
+    /* Paredes de fondo a ambos lados de la abertura de porteria. */
+    float goalHalf = GOAL_HW * SCALE;
+    float endHalf = (HX - goalHalf) * .5f;
+    float endCenter = (HX + goalHalf) * .5f;
+    for (int side = -1; side <= 1; side += 2) {
+        box(side * endCenter, ARENA_H * SCALE * .5f, -HY,
+            endHalf, ARENA_H * SCALE * .5f, .28f, .20f, .29f, .52f);
+        box(side * endCenter, ARENA_H * SCALE * .5f, HY,
+            endHalf, ARENA_H * SCALE * .5f, .28f, .52f, .30f, .18f);
+    }
+
+    /* Tuneles de porteria y sus marcos. */
+    float gh = GOAL_H * SCALE, gd = GOAL_D * SCALE;
+    box(0, gh * .5f, -HY - gd, goalHalf, gh * .5f, .24f, .12f, .28f, .85f);
+    box(0, gh * .5f,  HY + gd, goalHalf, gh * .5f, .24f, .90f, .42f, .10f);
+    box(-goalHalf, gh * .5f, -HY - gd * .5f, .22f, gh * .5f, gd * .5f, .12f, .28f, .85f);
+    box( goalHalf, gh * .5f, -HY - gd * .5f, .22f, gh * .5f, gd * .5f, .12f, .28f, .85f);
+    box(-goalHalf, gh * .5f,  HY + gd * .5f, .22f, gh * .5f, gd * .5f, .90f, .42f, .10f);
+    box( goalHalf, gh * .5f,  HY + gd * .5f, .22f, gh * .5f, gd * .5f, .90f, .42f, .10f);
+    box(0, gh, -HY - gd * .5f, goalHalf, .22f, gd * .5f, .12f, .28f, .85f);
+    box(0, gh,  HY + gd * .5f, goalHalf, .22f, gd * .5f, .90f, .42f, .10f);
+
+    /* Lineas de referencia en las paredes para que se aprecie la altura real. */
+    for (int h = 1; h < 5; ++h) {
+        float y = ARENA_H * SCALE * h / 5.0f;
+        box(0, y, -HY + .1f, HX, .018f, .035f, .32f, .39f, .48f);
+        box(0, y,  HY - .1f, HX, .018f, .035f, .32f, .39f, .48f);
+        box(-HX + .1f, y, 0, .035f, .018f, HY, .32f, .39f, .48f);
+        box( HX - .1f, y, 0, .035f, .018f, HY, .32f, .39f, .48f);
+    }
+}
+
 static void draw_car(const Car *c,float r,float g,float b,float now) {
-    float x=c->p.x*SCALE,z=c->p.y*SCALE,y=c->p.z*SCALE;
-    shadow(x,z,1.7f);glPushMatrix();glTranslatef(x,y,z);glRotatef(-car_yaw(c)*57.29578f,0,1,0);
-    box(0,.75f,0,1.18f,.35f,.84f,r,g,b);box(-.15f,1.28f,0,.62f,.22f,.68f,r*.7f,g*.7f,b*.7f);
-    box(.48f,1.28f,0,.1f,.18f,.55f,.75f,.9f,1);box(-1.1f,1.3f,0,.1f,.1f,.82f,r*.5f,g*.5f,b*.5f);
-    box(.8f,.38f,.88f,.28f,.38f,.16f,.06f,.06f,.06f);box(.8f,.38f,-.88f,.28f,.38f,.16f,.06f,.06f,.06f);
-    box(-.8f,.38f,.88f,.28f,.38f,.16f,.06f,.06f,.06f);box(-.8f,.38f,-.88f,.28f,.38f,.16f,.06f,.06f,.06f);
-    if(c->boosting){float f=.8f+.2f*sinf(now*35);box(-1.75f,.7f,0,.48f*f,.17f,.18f,1,.5f,.08f);}
+    float x=c->p.x*SCALE, y=c->p.z*SCALE, z=c->p.y*SCALE;
+    V3 right = vcross(c->f, c->u);
+    /* Columnas OpenGL: forward, up, right; asi el modelo tambien rota en paredes/techo. */
+    float m[16] = {
+        c->f.x, c->f.z, c->f.y, 0,
+        c->u.x, c->u.z, c->u.y, 0,
+        right.x, right.z, right.y, 0,
+        0, 0, 0, 1
+    };
+    shadow(x,z,.85f);
+    glPushMatrix(); glTranslatef(x,y,z); glMultMatrixf(m);
+    /* Escala cercana a la hitbox del coche del motor (1.18 x .36 x .84 m). */
+    box(0,0,0,.59f,.18f,.42f,r,g,b);
+    box(-.04f,.20f,0,.32f,.12f,.30f,r*.68f,g*.68f,b*.68f);
+    box(.22f,.19f,0,.055f,.10f,.25f,.72f,.88f,1.0f);
+    box(-.48f,.10f,0,.10f,.055f,.38f,r*.45f,g*.45f,b*.45f);
+    box(.36f,-.12f,.39f,.14f,.12f,.07f,.035f,.035f,.04f);
+    box(.36f,-.12f,-.39f,.14f,.12f,.07f,.035f,.035f,.04f);
+    box(-.36f,-.12f,.39f,.14f,.12f,.07f,.035f,.035f,.04f);
+    box(-.36f,-.12f,-.39f,.14f,.12f,.07f,.035f,.035f,.04f);
+    if(c->boosting){float f=.75f+.25f*sinf(now*35);box(-.78f,0,0,.30f*f,.09f,.11f,1,.48f,.06f);}
     glPopMatrix();
 }
+
 static void draw_ball(const Ball *b) {
     float R=BALL_R*SCALE,x=b->p.x*SCALE,y=b->p.z*SCALE,z=b->p.y*SCALE;shadow(x,z,R*1.1f);
     glPushMatrix();glTranslatef(x,y,z);
@@ -229,6 +311,10 @@ int main(void) {
             if(pad.buttons&SCE_CTRL_LTRIGGER)p.throttle=-1;
             p.boost=(pad.buttons&SCE_CTRL_CIRCLE)!=0;p.jump=(pad.buttons&SCE_CTRL_TRIANGLE)!=0;
             p.handbrake=(pad.buttons&SCE_CTRL_SQUARE)!=0;
+            if(!world.car[0].wheels) {
+                p.pitch=CLAMP((128.0f-(float)pad.ly)/128.0f,-1.0f,1.0f);
+                if(fabsf(p.pitch)<.16f)p.pitch=0;
+            }
             if(pad.buttons&SCE_CTRL_UP) p.pitch=1;
             if(pad.buttons&SCE_CTRL_DOWN) p.pitch=-1;
             if(pressed&SCE_CTRL_SELECT)ballcam=!ballcam;
@@ -246,11 +332,11 @@ int main(void) {
         else{float want=car_yaw(pl);if(ballcam){float dx=ball->p.x-pl->p.x,dy=ball->p.y-pl->p.y;if(dx*dx+dy*dy>360000)want=atan2f(dy,dx);}if(state==ST_COUNT&&timer>2.9f)cam_yaw=car_yaw(pl);cam_yaw+=wrap_angle(want-cam_yaw)*.09f;
             ex=CLAMP(px-cosf(cam_yaw)*9,-HX-GD,HX+GD);ez=CLAMP(pz-sinf(cam_yaw)*9,-HY-5,HY+5);ey=4.8f+pl->p.z*SCALE*.25f;
             cx=px+cosf(cam_yaw)*13;cy=1.0f;cz=pz+sinf(cam_yaw)*13;}
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);begin3d();look_at(ex,ey,ez,cx,cy,cz);draw_arena();draw_car(&world.car[1],.95f,.48f,.1f,now);draw_car(pl,.15f,.4f,.95f,now);draw_ball(ball);
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);begin3d();look_at(ex,ey,ez,cx,cy,cz);draw_arena();draw_pads(&world,now);draw_car(&world.car[1],.95f,.48f,.1f,now);draw_car(pl,.15f,.4f,.95f,now);draw_ball(ball);
         begin2d();
         if(state==ST_MENU){rect2d(0,0,SCR_W,SCR_H,0,0,0,.35f);text_c(50,9,1,.75f,.2f,"VITA LEAGUE");text_c(125,4,.6f,.85f,1,"COCHES + FISICA 3D");const char *items[4]={"JUGAR","","CONTROLES","SALIR"};snprintf(buf,sizeof(buf),"DIFICULTAD: < %s >",DIFF_NAME[diff]);items[1]=buf;
             for(int i=0;i<4;i++){float y=215+i*62;if(i==sel){rect2d(230,y-12,500,56,.15f,.4f,.95f,.55f);text_c(y,4.5f,1,1,1,items[i]);}else text_c(y,4.5f,.8f,.85f,.95f,items[i]);}text_c(498,2.5f,.85f,.85f,.85f,"ARRIBA/ABAJO: ELEGIR   X: ACEPTAR");}
-        else if(state==ST_CONTROLS){rect2d(0,0,SCR_W,SCR_H,0,0,0,.65f);text_c(40,6,1,.75f,.2f,"CONTROLES");const char *lines[6]={"STICK IZQ / PAD: GIRAR","R O X: ACELERAR","L: FRENAR / CUADRADO: DERRAPE","CIRCULO: BOOST","TRIANGULO: SALTO / DOBLE SALTO","SELECT: CAMARA PELOTA / COCHE"};for(int i=0;i<6;i++)text_c(130+i*52,3.6f,1,1,1,lines[i]);text_c(480,3,.7f,.85f,1,"START: VOLVER AL MENU");}
+        else if(state==ST_CONTROLS){rect2d(0,0,SCR_W,SCR_H,0,0,0,.65f);text_c(40,6,1,.75f,.2f,"CONTROLES");const char *lines[6]={"STICK IZQ: GIRAR / EN AIRE: APUNTAR","R O X: ACELERAR","L: FRENAR / CUADRADO: DERRAPE","CIRCULO: BOOST / IMPULSO EN AIRE","TRIANGULO: SALTO / DOBLE SALTO","CRUZETA: AJUSTAR MORRO EN AIRE"};for(int i=0;i<6;i++)text_c(130+i*52,3.6f,1,1,1,lines[i]);text_c(480,3,.7f,.85f,1,"START: VOLVER AL MENU");}
         else{rect2d(375,10,100,62,.1f,.3f,.9f,.85f);rect2d(485,10,100,62,.9f,.45f,.08f,.85f);snprintf(buf,sizeof(buf),"%d",score_p);text(425-text_w(6,buf)*.5f,22,6,1,1,1,buf);snprintf(buf,sizeof(buf),"%d",score_a);text(535-text_w(6,buf)*.5f,22,6,1,1,1,buf);text(30,20,3,.6f,.8f,1,"TU");text(SCR_W-30-text_w(3,"IA"),20,3,1,.75f,.4f,"IA");
             rect2d(330,494,300,26,0,0,0,.55f);rect2d(334,498,2.92f*pl->boost,18,1,.75f,.1f,1);text(335,470,2.4f,1,1,1,"BOOST");
             if(state==ST_COUNT){snprintf(buf,sizeof(buf),"%d",(int)ceilf(timer));text_c(190,14,1,.9f,.3f,buf);}else if(state==ST_GOAL)text_c(200,12,last_scorer==1?.5f:1,last_scorer==1?.75f:.65f,last_scorer==1?1:.25f,"GOOOL!");else if(state==ST_OVER){rect2d(0,0,SCR_W,SCR_H,0,0,0,.55f);text_c(150,10,1,1,1,score_p>score_a?"GANASTE!":"PERDISTE");snprintf(buf,sizeof(buf),"%d - %d",score_p,score_a);text_c(260,7,1,.8f,.3f,buf);text_c(380,3.4f,.85f,.9f,1,"TRIANGULO: REVANCHA");text_c(430,3.4f,.85f,.9f,1,"X: MENU");}}
