@@ -1,15 +1,26 @@
 name: build
+
 on: [push, workflow_dispatch]
+
 jobs:
-  build:
+  vpk:
     runs-on: ubuntu-latest
     container: vitasdk/vitasdk:latest
+
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          mkdir build && cd build
-          cmake .. && make
+
+      - name: Instalar librerias
+        run: vdpm install vitaGL vitaShaRK SceShaccCgExt taihen zlib
+
+      - name: Compilar
+        run: |
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake"
+          cmake --build build
+          ls -lh build/vitaleague.vpk
+
       - uses: actions/upload-artifact@v4
         with:
           name: vitaleague
           path: build/vitaleague.vpk
+          if-no-files-found: error
