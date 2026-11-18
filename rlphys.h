@@ -163,6 +163,9 @@ static void car_ortho(Car *c) {
 
 static void car_arena(Car *c) {
     V3 r = vcross(c->f, c->u);
+    int was_on = c->wheels;
+    V3 gprev = c->gn;
+    float s0 = vlen(c->v);
     for (int pass = 0; pass < 2; pass++)
         for (int i = 0; i < 8; i++) {
             float sx = (i & 1) ? 1.0f : -1.0f, sy = (i & 2) ? 1.0f : -1.0f, sz = (i & 4) ? 1.0f : -1.0f;
@@ -172,25 +175,59 @@ static void car_arena(Car *c) {
             if (d < 0) {
                 c->p = vadd(c->p, vmul(n, -d));
                 float vn = vdot(c->v, n);
-                if (vn < 0) c->v = vsub(c->v, vmul(n, vn));
+                if (vn < 0) {
+                    c->v = vsub(c->v, vmul(n, vn));
+                    /* sobre una rampa curva el coche "sigue" la superficie: se desvia la velocidad
+                       hacia la tangente en vez de frenarla (solo si venia sobre ruedas y la normal
+                       de contacto es casi la del suelo que pisaba) */
+                    if (was_on && vdot(n, gprev) > 0.6f) {
+                        float st = vlen(c->v);
+                        if (st > 1e-3f && st < s0) c->v = vmul(c->v, s0 / st);
+                    }
+                }
             }
         }
-    int nb = 0, nt = 0;
-    V3 sb = v3(0, 0, 0), sa = v3(0, 0, 0);
+
+    /* puntos de contacto superiores/laterales (para detectar "tocando algo") */
+    int nt = 0;
+    V3 sa = v3(0, 0, 0);
     for (int i = 0; i < 8; i++) {
         float sx = (i & 1) ? 1.0f : -1.0f, sy = (i & 2) ? 1.0f : -1.0f, sz = (i & 4) ? 1.0f : -1.0f;
         V3 q = vadd(c->p, vadd(vmul(c->f, sx * CAR_HL), vadd(vmul(r, sy * CAR_HW), vmul(c->u, sz * CAR_HH))));
         float d; V3 n;
         arena(q, &d, &n);
-        if (d < 6.0f) { nt++; sa = vadd(sa, n); if (sz < 0) { nb++; sb = vadd(sb, n); } }
+        if (d < 6.0f) { nt++; sa = vadd(sa, n); }
     }
+
+    /* base del coche: 4 esquinas + 4 puntos medios de los bordes + centro = 9 muestras.
+       Margen de 25 uu (alcance de la suspension) para no perder el contacto en la curva. */
+    static const float SX[9] = {-1, 1, -1, 1, 0, 0, -1, 1, 0};
+    static const float SY[9] = {-1, -1, 1, 1, -1, 1, 0, 0, 0};
+    int nb = 0;
+    V3 sb = v3(0, 0, 0);
+    for (int i = 0; i < 9; i++) {
+        V3 q = vadd(c->p, vadd(vmul(c->f, SX[i] * CAR_HL), vadd(vmul(r, SY[i] * CAR_HW), vmul(c->u, -CAR_HH))));
+        float d; V3 n;
+        arena(q, &d, &n);
+        if (d < 25.0f) { nb++; sb = vadd(sb, n); }
+    }
+
     c->touching = nt >= 2;
     c->wheels = 0;
-    if (nb >= 3) {
+    if (nb >= 1) {
         V3 g = vnorm(sb);
-        if (vdot(c->u, g) > 0.5f) { c->wheels = 1; c->gn = g; }
+        float ug = vdot(c->u, g), vg = vdot(c->v, g);
+        /* 2+ puntos de la base y el coche no se aleja de la superficie; 1 solo punto basta
+           mientras ya iba pegado (transicion de la rampa) */
+        if ((nb >= 2 && ug > 0.2f && vg < 250.0f) || (was_on && ug > 0.5f && vg < 150.0f)) {
+            c->wheels = 1; c->gn = g;
+        }
     }
-    if (c->touching && !c->wheels) c->gn = vnorm(sa);
+    if (c->touching && !c->wheels) {
+        V3 g = vnorm(sa);
+        c->gn = g;
+        if (vdot(c->u, g) > 0.3f && fabsf(vdot(c->f, g)) < 0.75f && c->flip_t <= 0.0f) c->wheels = 1;   /* aterrizaje inclinado */
+    }
 }
 
 static void car_step(Car *c, const Input *in, float dt) {
@@ -219,7 +256,7 @@ static void car_step(Car *c, const Input *in, float dt) {
                 c->v = vadd(c->v, vadd(vmul(fh, a * 500.0f), vmul(rh, s * 500.0f)));
                 if (c->v.z < 0) c->v.z = 0;
                 c->flip_w = vadd(vmul(r, -a * 5.5f), vmul(c->f, s * 5.5f));
-                c->flip_t = 0.55f;
+                c->flip_t = 0.65f;
             } else c->v = vadd(c->v, vmul(c->u, 292.0f));
         }
     }
@@ -231,18 +268,23 @@ static void car_step(Car *c, const Input *in, float dt) {
     /* ----- boost ----- */
     c->boosting = in->boost && c->boost > 0.0f;
     if (c->boosting) c->boost = fmaxf(0.0f, c->boost - 33.3f * dt);
+    float gscale = 1.0f;       /* fraccion de gravedad que se aplica (0 pegado a pared/techo) */
 
     if (on) {
         /* ----- conduccion en suelo / pared ----- */
         V3 n = c->gn;
-        float vf = vdot(c->v, c->f), vr = vdot(c->v, r), vn = vdot(c->v, n);
+        V3 ft = vsub(c->f, vmul(n, vdot(c->f, n)));
+        ft = vlen(ft) > 0.2f ? vnorm(ft) : c->f;
+        V3 rt = vcross(ft, n);
+        float vf = vdot(c->v, ft), vr = vdot(c->v, rt), vn = vdot(c->v, n);
         float th = in->throttle;
         if (th != 0.0f) {
             if (th * vf < 0.0f) {                         /* frenar */
                 float dv = 3500.0f * dt;
                 if (fabsf(vf) < dv) vf = 0; else vf -= (vf > 0 ? dv : -dv);
             } else {
-                float acc = 1600.0f * (1.0f - fabsf(vf) / 1410.0f);
+                float av = fabsf(vf);
+                float acc = av < 1400.0f ? lerpf(1600.0f, 160.0f, av / 1400.0f) : lerpf(160.0f, 0.0f, (av - 1400.0f) / 10.0f);
                 if (acc > 0) vf += th * acc * dt;
             }
         } else {
@@ -259,14 +301,31 @@ static void car_step(Car *c, const Input *in, float dt) {
         /* agarre lateral (derrape con freno de mano) */
         vr *= expf(-(in->handbrake ? 1.5f : 14.0f) * dt);
         if (in->handbrake) vf *= expf(-0.35f * dt);
-        c->v = vadd(vadd(vmul(c->f, vf), vmul(r, vr)), vmul(n, vn));
+        ft = vsub(c->f, vmul(n, vdot(c->f, n)));
+        ft = vlen(ft) > 0.2f ? vnorm(ft) : c->f;
+        rt = vcross(ft, n);
+        c->v = vadd(vadd(vmul(ft, vf), vmul(rt, vr)), vmul(n, vn));
         c->v = vsub(c->v, vmul(n, 325.0f * dt));           /* ruedas pegajosas */
-        /* alinear el coche con la superficie */
-        V3 ax = vcross(c->u, n);
+        /* gravedad: en paredes y techo las ruedas pegajosas sustituyen a la gravedad.
+           Suelo/rampas suaves: gravedad normal. Pared vertical: ninguna. Techo: solo se sostiene
+           si va con algo de velocidad (a <600 uu/s se cae). */
+        gscale = clampf(n.z / 0.6f, 0.0f, 1.0f);
+        if (n.z < -0.2f) gscale = clampf(1.0f - fabsf(vf) / 600.0f, 0.0f, 1.0f);
+        /* alinear el coche con la superficie, anticipando la normal que viene (60 ms por delante) */
+        V3 nt = n;
+        {
+            V3 vt = vsub(c->v, vmul(n, vdot(c->v, n)));
+            V3 q = vsub(vadd(c->p, vmul(vt, 0.06f)), vmul(c->u, CAR_HH));
+            float da; V3 na;
+            arena(q, &da, &na);
+            if (da < 60.0f && vdot(na, n) > 0.2f) nt = vnorm(vadd(n, na));
+        }
+        V3 ax = vcross(c->u, nt);
         float s = vlen(ax);
         if (s > 1e-5f) {
-            float ang = asinf(clampf(s, 0, 1)) * (1.0f - expf(-14.0f * dt));
-            if (vdot(c->u, n) < 0) ang = (PI_F - asinf(clampf(s, 0, 1))) * (1.0f - expf(-14.0f * dt));
+            float k = 1.0f - expf(-40.0f * dt);
+            float ang = asinf(clampf(s, 0, 1)) * k;
+            if (vdot(c->u, nt) < 0) ang = (PI_F - asinf(clampf(s, 0, 1))) * k;
             ax = vmul(ax, 1.0f / s);
             c->f = vrot(c->f, ax, ang); c->u = vrot(c->u, ax, ang);
         }
@@ -309,7 +368,7 @@ static void car_step(Car *c, const Input *in, float dt) {
         }
     }
 
-    c->v.z += GRAV * dt;
+    c->v.z += GRAV * gscale * dt;
     float sp = vlen(c->v);
     if (sp > CAR_MAXV) c->v = vmul(c->v, CAR_MAXV / sp);
     c->supersonic = sp > (c->supersonic ? 2190.0f : 2200.0f);

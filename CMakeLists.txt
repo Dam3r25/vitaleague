@@ -11,9 +11,9 @@ endif()
 project(vitaleague C)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Vita League 3D")
+set(VITA_APP_NAME "Vita League RL")
 set(VITA_TITLEID  "VLEA00001")
-set(VITA_VERSION  "02.00")
+set(VITA_VERSION  "04.00")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-q -Wall -O3 -std=gnu99 -ftree-vectorize")
 
